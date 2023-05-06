@@ -1,0 +1,313 @@
+---
+title: "Credit Card Fraud Detection"
+author: "Ajay Rawtani"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: 4
+---
+
+```{r knitr-options, include = FALSE}
+knitr::opts_chunk$set(fig.align="center",
+                      fig.height=6,
+                      fig.width=12,
+                      warning = FALSE,
+                      message = FALSE,
+                      comment = NA,
+                      echo=FALSE)
+#install.packages("ISLR")
+```
+
+
+```{r, `echo=FALSE`}
+library(caret)
+library(rpart)
+library(dplyr)
+library(rpart.plot)
+library(xgboost)
+library(caTools)
+library(ggplot2)
+library(ROSE)
+```
+
+
+# Introduction
+
+What is credit card fraud?
+When someone uses your credit card to buy goods & services or access your personal account without consent is called credit card fraud.
+In the European Union the credit card fraud in 2013 was approximately €1.44 Billion.
+
+Types of credit card fraud:
+Some common types of credit card frauds are:
+
+•	Card-not-present
+•	Counterfeit credit-card
+•	Account or application hack
+
+With the advent of new technology, fraudsters find new ways to scam people and so it is important to learn the signs and act quickly to report suspected frauds.
+
+How to stop credit card fraud?
+There is a saying 'Set a thief to catch a thief', meaning that the best way to catch a thief is to with the help of another thief because both think alike. Hence, to tune thinking like a thief we have tried to implement machine learning models to learn to identify patterns and anomalies of fraudulent transactions from a large data set and flag such transactions in the future.
+
+# Data Source
+
+For our project we have chosen an open-source date-set from Kaggle : https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+
+## Overview of DataSet
+
+The data set contains a total of 31 variables, seen below, and 284,807 row entries. The data has already been PCA transformed (Dimensionality Reduction), however due to confidentiality issue a lot of the variable names have been masked. As seen below are listed the headers of the variables. Variables "Time" through "Amount" are all dependent variables and "Class" variable is the only dependent variable.
+
+The "Class" dependent variable is labeled "0" for non-fraud transactions and "1" for fraudulent transactions. All the dependent variables are numeric and the structure of the data can be seen below.
+
+```{r load_data}
+# Read the CSV Data File
+dat <- read.csv("creditcard.csv")
+
+#View the Headers
+names(dat)
+
+cat("\n") #for visual clarity only
+
+#View Structure of Data
+str(dat)
+```
+To give a better understanding of the data we are working with, we tale a look at the first 6 rows from the data set.
+
+```{r}
+#Print of sample set (Top 6 rows)
+head(dat)
+```
+
+The data set is an unbalanced data set i.e. we have only 492 fraudulent transactions of the total 284,807 transactions that is less than 0.2% of the data set. We can visualize this from the pie chart given below:
+
+```{r}
+# PIE CHART for comparing no.of frauds and non-frauds in data set
+labels = c("No Fraud","Fraud")
+labels = paste(labels,round(prop.table(table(dat$Class))*100,2))
+labels = paste(labels,"%")
+pie(table(dat$Class),labels,col = c("#AB9968", "#BA0C2F"), main = "Overall Credit Card Transactions")
+```
+
+## Summary Statistics
+The summary statistics are shown below:
+```{r sum_stat}
+#View summary statistics
+summary(dat)
+```
+
+
+# Reasearch
+
+## Research Questions
+
+1) Implement XGBoost and Logistic Regression (for classification) models to predict fraudulent transactions \n
+2) Compare the accuracy of the above models
+
+## Methods for addressing research questions
+1) XGBoost (Classification) - eXtreme Gradient Boost a.k.a XGBoost is a regularized form of gradient boosting. The tool can be used for regression as well as classification. In this project we use the classification method of XGBoost to classify fraudulent transactions from non-fraudulent transactions.\n
+
+The steps involved in XGBoost are as follows:
+a) Initial prediction - this is usually 0.5 be it for regression or classisfication
+b) Similarity Score - this step is a complex step that includes calculating the residuals and then plugging in residual values in the similarity scores formula. We do this for all the leaves combinations i.e. different thresholds. Note: this is iterated until there is only one residual in the Tree or we have achieved tree depth, which is 6 by default.
+c) Gain - To check the clustering of the XGBoost tree, the threshold that gives a higher gain will be used as a branch in the XGBoost tree. Note: this is iterated until there is only one residual in the Tree or we have achieved tree depth, which is 6 by default.
+d) Prune - This is basically cutting the leaves of the tree, the pruning is done based on the gamma value. The gamma value is 0.5 by default. If the difference in gain and gamma is negative, we prune the leaves else leave them as it is.
+e) Output value - After the tree formed we then calculate the output value with the same lambda as in the similarity score. Note: Lambda is a regularization parameter that reduces the sensitivity of the prediction to isolated observaitons.
+f) New Prediction - Calculated by using the old prediction value, learning rate (eta, with 0.3 as default value) and the output value. The new prediction residual will be smaller than the residual from the old prediction value.
+
+The above steps are iterates until the residuals become very minute or we reach the maximum number of trees.
+
+2) Logistic Regression (Classification) - This is similar to liner regression, but we only use this for classification based on our prediction. The default prediction value is 0.5. We fit the line using maximum likelihood i.e. the line is shifted to evaluate the likelihood and the line with the maximum likelihood is selected.
+
+## Importance of the project
+
+1) Proof of concept for XGBoost classification. \n
+2) Model predictor variable as a function of thirty dependent variables to automatically predict fraudulent      transactions accurately. \n
+3) Comparing accuracy of models in predicting the fraudulent transactions. \n
+4) Analyzing significant variables contributing to the predictor variable.
+
+# Data Satisfaction
+
+To carry out analysis there are two important pre-requisites. First, the data must all be numeric. Second, the data needs to be split into Training and Testing sets. The training set will comprise of 80% of the data and will be used to train the machine learning models whereas the testing data will be used to predict the outcome of the "Class" column i.e. 0 for non-fraud transaction and 1 for fraudulent transaction. The testing data is split into two testing sets, one stores the 'Class' variable ('dat.testc') that will be compared to the other testing data set that will not contain the class variable initially but will be used to predict the transaction in testc under 'Predicted' column.
+
+```{r}
+# Data split
+set.seed(123456)
+
+sample_data <- sample.split(dat$Class,SplitRatio = 0.80)
+dat.train <- subset(dat, sample_data == TRUE)
+dat.test <- subset(dat, sample_data == FALSE, select = -Class)
+dat.testc <- subset(dat, sample_data == FALSE, select = Class)
+
+dat.testc = as.data.frame(dat.testc)
+colnames(dat.testc)[1] = c("Class")
+
+# PIE CHART for comparing no.of training and test
+train_count <- nrow(dat.train)#change to dat.train
+test_count <- nrow(dat.test)#change to dat.test
+
+train_percent <- round(train_count / (train_count + test_count) * 100, 1)
+test_percent <- round(test_count / (train_count + test_count) * 100, 1)
+
+df <- data.frame(
+  dataset = c("Testing", "Training"),
+  count = c(test_count, train_count),
+  percent = c(test_percent, train_percent)
+ )
+colors <- c("#AB9968", "#BA0C2F")
+labels <- paste0(df$dataset, " (", df$percent, "%)")
+
+ggplot(df, aes(x = "", y = count, fill = dataset)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = colors, labels = labels) +
+  labs(title = "Count of Observations in Training and Testing Data Sets") +
+  theme_void()
+```
+
+# Method Applied and Interpretation
+## XGBoost
+
+First, we implement the XGBoost (classification) method. XGBoost only accepts matrix as input so we pass the training data set 'dat.train' with the class variable to train the model. The parameters used in the xgboost model are default values such as the eta = 0.3, gamma = 0.5, max_depth = 6. We did try to tweak the values however we found that the model worked best on these values, giving the maximum accuracy.
+
+```{r}
+# XGBOOST ALGORITHM
+label <- dat.train$Class
+y <- recode(label, '1' = 1, "0" = 0)
+xgb <- xgboost(data = data.matrix(dat.train[,-31]), 
+               label = y,
+               eta = 0.3,
+               gamma = 0.5,
+               max_depth = 6, 
+               nrounds = 300, 
+               objective = "binary:logistic",
+               colsample_bytree = 0.8,
+               verbose = 0,
+               set.seed(1234)
+)
+
+# Predicting Values
+xgb_predict <- predict(xgb, data.matrix(dat.test))
+
+#Classifying into 0's and 1's
+dat.testc$Predicted = 0L
+dat.testc$Predicted[xgb_predict>0.5] = 1L
+dat.testc$Predicted = factor(dat.testc$Predicted)
+
+```
+
+### Visualization
+
+#### Confusion Matrix
+
+To compare the outcome 
+```{r}
+# Predicted vs Reference Confusion Matrix
+confusionMatrix(dat.testc$Predicted,as.factor(dat.testc$Class))
+```
+The testing data set contained 56,961 entries. As seen from the confusion matrix above, the XGBoost model for classification correct identified 99.96% of the transactions, correctly identifying 81 fraudulent transactions and incorrectly marking only 20 transactions. In the incorrect transactions the model incorrectly identified 17 fraudulent transactions as non-fraudulent and 3 non-fraudulent transactions as fraudulent.
+
+Kappa is essentially interrater reliability testing, measure of agreement between the predicted labels and the true labels, and it takes into account the possibility of agreement occurring by chance. A high Kappa value of 0.8899 means that the classification of this data was not by chance and that the result has almost perfect agreement.
+
+#### ROC Curve
+
+The Receiver Operating Characteristic Curve a.k.a ROC Curve, is a graph showing the classification performance of a model at different classification thresholds. The false positive is along the x-axis and the true positives are plotted against the y-axis, and essentially shows the trade-off between clinical sensitivity and specificity. The Area Under the ROC Curve a.k.a AUC provides an cumulative measure of classification performance over possible classification thresholds. The greater the AUC, the higher the ability of the model to distinguish between positive and negative classes.
+
+```{r}
+roc.curve(dat.testc$Class,dat.testc$Predicted,plotit = TRUE,
+          col="#BA0C2F",main = "ROC curve for XGBoost Algorithm",
+          col.main="#AB9968")
+```
+The AUC from the XGBoost model is 0.913 which is considered as almost perfect. Moreover, as the goal is to find  fraudulent transactions, we can accept a higher false positive rate. Hence, our best threshold will be at the peak of the curve on the top-right corner of the ROC curve.
+
+#### Top Contributors
+
+```{r}
+#Top contributing variables
+xgb.plot.shap(data = data.matrix(dat.train[,-31]),
+                                 model = xgb,
+                                 top_n = 3)
+```
+SHAP is an acronym for SHapley Additive exPlanations. SHAP values indicate the contribution of each variable on the final score of the prediction. Seen above are the top 3 variables contributing to the final prediction, the variables are arranged in a descending order. The SHAP values are against the Y-axis and the variable values are against the x-axis. Each blue dot is an entry in the data set, whereas the red curve is the range of values the variable can take and corresponding SHAP values.
+
+Positive SHAP value means positive impact on prediction, leading the model to predict 1.[citation 1]
+Negative SHAP value means negative impact, leading the model to predict 0.[citation 1]
+
+From the graph of variable 'V4' we see that for the range of variable values between 1 through the SHAP values are positive and negative otherwise. This means that variable values of V4 between 1 to 15 have a positive impact, leading the model to predict 1 and predict 0 for other values.
+
+```{r}
+xgb.plot.shap.summary(data = data.matrix(dat.train[,-31]),
+                                 model = xgb, top_n = 30)
+```
+The graph above represents a summary of all the SHAP value of all the 30 independent variables. Each dot on the graph represent an entry in the data set. The heat map on the right hand side give the range of values that variable takes.
+
+We can see that higher feature value of variable V14 contribute negatively to the prediction. The same can be compared with the 'xgb.plot.shap' and we can see that for V14 for values -1 and greater the SHAP values are negative.
+
+The variables in the graph are in the descending order i.e. the variable V17 contributes the highest in terms of predicting the outcome and V25 contributes the least to the prediction of the outcome.
+
+## Logistic Regression
+
+To compare the results of the above XGBoost Classification model we ran a logistic regression classification to predict the non-fraud and fraudulent cases.
+
+```{r}
+# LOGISTIC REGRESSION
+LR <- glm(Class ~ ., data = dat.train, family = 'binomial')
+LR_predict <- predict(LR,dat.test, type = 'response')
+
+dat.testc$Predicted = 0L
+dat.testc$Predicted[LR_predict>0.5] = 1L
+dat.testc$Predicted = factor(dat.testc$Predicted)
+```
+
+### Visualization
+
+#### Confusion Matrix
+
+```{r}
+#LR confusion matrix
+confusionMatrix(dat.testc$Predicted,as.factor(dat.testc$Class))
+```
+The testing data set contained 56,961 entries. As seen from the confusion matrix above, the Logistic Regression model for classification correct identified 99.94% of the transactions, correctly identifying 69 fraudulent transactions and incorrectly marking 35 transactions. In the incorrect transactions the model incorrectly identified 29 fraudulent transactions as non-fraudulent and 6 non-fraudulent transactions as fraudulent.
+
+Kappa is essentially interrater reliability testing, measure of agreement between the predicted labels and the true labels, and it takes into account the possibility of agreement occurring by chance. A high Kappa value of 0.7974 means that the classification of this data was not by chance and that the result has good agreement.
+
+#### ROC Curve
+
+```{r}
+#Logistic Regression ROC Curve
+
+roc.curve(dat.testc$Class,dat.testc$Predicted,plotit = TRUE, col="#D6604D",main = "ROC curve for Logistic Regression Algorithm", col.main="#B2182B")
+```
+The AUC from the Logistics Regression (classification) model is 0.852 which is quite high. Moreover, as the goal is to find  fraudulent transactions, we can accept a higher false positive rate. Hence, our best threshold will be at the peak of the curve on the top-right corner of the ROC curve.
+
+# Conclusion
+
+Both the XGBoost and logistic regression for classification were implemented on given unbalanced dataset. The finding were as such:
+
+1) The AUC for the XGBoost is significantly better at 0.913 compared to Logistic regression at 0.852, indicating that XGB has better discriminating power.
+2) The XGBoost model was 42.85% less prone to incorrect classification, which is evident from the confusion matrix of the two model where XGBoost classified 15 fewer transactions incorrectly from a data set of 59,916. Furthermore, we are more concerned about false negatives and on this front the XGBoost model classified 58.6% fewer variables as false negatives.
+3) The kappa value for XGBoost model and LR model are 0.8899 and 0.7974 respectively, indicating substantial level of agreement between the predicted and true values.
+
+To conclude, the XGBoost (Classification) model for detecting credit card frauds was more robust at correctly predicting fraudulent transactions as compared to Logistic Regression (Classification).
+
+
+# Citations
+
+1.  [Interpretation of SHAP values](https://m.mage.ai/how-to-interpret-and-explain-your-machine-learning-models-using-shap-values-471c2635b78e)
+
+2.  [Interpretation of SHAP values alternate](https://blog.datascienceheroes.com/how-to-interpret-shap-values-in-r/)
+
+3.  [XGBoost Mathematics Explained](https://dimleve.medium.com/xgboost-mathematics-explained-58262530904a)
+
+4.  [XGBoost: A Scalable Tree Boosting System](https://arxiv.org/pdf/1603.02754.pdf)
+
+5.  [XGBoost Documentation](https://xgboost.readthedocs.io/en/latest/index.html)
+
+6.  [Interrater reliability: the kappa statistic](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3900052/#:~:text=Cohen%20suggested%20the%20Kappa%20result,1.00%20as%20almost%20perfect%20agreement)
